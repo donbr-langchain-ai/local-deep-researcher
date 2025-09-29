@@ -1,0 +1,178 @@
+prototype:
+  scope_rule: "Only modify files under src/ollama_deep_researcher/; prefer config-based injection."
+  goal: "Expose one new MCP tool and wire it into researcher flow without graph surgery."
+  server:
+    name: demo_tools
+    transport: stdio
+    auth: optional
+    endpoint: null
+    tools:
+      - name: classify_text
+        input_schema: {type: object, properties: {text: {type: string}}, required: [text]}
+        output_schema: {type: object, properties: {label: {type: string}, confidence: {type: number}}}
+  client_wiring:
+    config_surface: "src/ollama_deep_researcher/configuration.py:64-81"
+    discovery: "src/ollama_deep_researcher/utils.py:get_mcp_tools()"
+    selection: "prefix-based namespace (mcp_classify_text vs builtin Query)"
+  prompts:
+    edits:
+      - file: "src/ollama_deep_researcher/prompts.py"
+        change: "Add classification capability to summarizer_instructions"
+  acceptance:
+    checks:
+      - "Client discovers MCP tool at startup"
+      - "Researcher invokes tool during summarization"
+      - "State updates reflect classification outputs"
+  rollout:
+    dev: "local stdio with demo_tools server"
+    prod: "auth header via token store; retry/backoff"
+
+# Integration Strategy
+integration_approach:
+  insertion_point: "summarize_sources node"
+  rationale: "Natural classification point for research content without disrupting core workflow"
+  wiring_pattern: "extend existing bind_tools() mechanism"
+
+# Configuration Changes
+config_extensions:
+  - file: "src/ollama_deep_researcher/configuration.py"
+    change: |
+      mcp_enabled: bool = Field(
+          default=False,
+          title="Enable MCP Tools",
+          description="Enable Model Context Protocol tool discovery"
+      )
+      mcp_server_url: str = Field(
+          default="stdio://demo_tools",
+          title="MCP Server URL",
+          description="MCP server connection string"
+      )
+
+# Code Changes
+code_modifications:
+  - file: "src/ollama_deep_researcher/utils.py"
+    change: |
+      def get_mcp_tools(mcp_server_url: str) -> List[Any]:
+          """Discover and return MCP tools from configured server."""
+          if not mcp_server_url or mcp_server_url == "disabled":
+              return []
+
+          # MCP client initialization logic
+          # Returns tools wrapped for LangChain compatibility
+          return []
+
+  - file: "src/ollama_deep_researcher/graph.py"
+    location: "line 300 (before configurable = Configuration.from_runnable_config)"
+    change: |
+      # Import MCP tools discovery
+      from ollama_deep_researcher.utils import get_mcp_tools
+
+      # In summarize_sources function, before LLM creation:
+      mcp_tools = []
+      if configurable.mcp_enabled:
+          mcp_tools = get_mcp_tools(configurable.mcp_server_url)
+
+  - file: "src/ollama_deep_researcher/graph.py"
+    location: "line 315 (LLM instantiation in summarize_sources)"
+    change: |
+      # Extend existing LLM with MCP tools
+      llm = ChatOllama(
+          base_url=configurable.ollama_base_url,
+          model=configurable.local_llm,
+          temperature=0,
+      )
+      if mcp_tools:
+          llm = llm.bind_tools(mcp_tools)
+
+# Prompt Enhancement
+prompt_updates:
+  - file: "src/ollama_deep_researcher/prompts.py"
+    target: "summarizer_instructions"
+    addition: |
+      <CLASSIFICATION_CAPABILITY>
+      If classification tools are available, use them to categorize content by:
+      - Research domain (technical, academic, news, opinion)
+      - Quality level (authoritative, preliminary, speculative)
+      - Relevance score to user topic
+      </CLASSIFICATION_CAPABILITY>
+
+# State Extensions (minimal)
+state_modifications:
+  - file: "src/ollama_deep_researcher/state.py"
+    addition: |
+      classification_results: Annotated[list, operator.add] = field(default_factory=list)
+
+# Unified Diffs
+proposed_changes:
+  configuration_py: |
+    @@ -60,6 +60,16 @@
+         description="Use tool calling instead of JSON mode for structured output",
+     )
+
+    +    mcp_enabled: bool = Field(
+    +        default=False,
+    +        title="Enable MCP Tools",
+    +        description="Enable Model Context Protocol tool discovery"
+    +    )
+    +    mcp_server_url: str = Field(
+    +        default="stdio://demo_tools",
+    +        title="MCP Server URL",
+    +        description="MCP server connection string"
+    +    )
+
+  utils_py: |
+    @@ -387,3 +387,15 @@
+
+         return {"results": results}
+
+    +
+    +def get_mcp_tools(mcp_server_url: str) -> List[Any]:
+    +    """Discover and return MCP tools from configured server."""
+    +    if not mcp_server_url or mcp_server_url == "disabled":
+    +        return []
+    +
+    +    # MCP client initialization logic
+    +    # TODO: Implement actual MCP client connection
+    +    # Returns tools wrapped for LangChain compatibility
+    +    return []
+
+  graph_py: |
+    @@ -23,6 +23,7 @@
+     from ollama_deep_researcher.state import (
+         SummaryState,
+         SummaryStateInput,
+    +    from ollama_deep_researcher.utils import get_mcp_tools
+     )
+
+     @@ -299,6 +300,10 @@
+
+         # Run the LLM
+         configurable = Configuration.from_runnable_config(config)
+    +
+    +    mcp_tools = []
+    +    if configurable.mcp_enabled:
+    +        mcp_tools = get_mcp_tools(configurable.mcp_server_url)
+
+         # For summarization, we don't need structured output, so always use regular mode
+         if configurable.llm_provider == "lmstudio":
+    @@ -313,6 +318,8 @@
+             model=configurable.local_llm,
+             temperature=0,
+         )
+    +    if mcp_tools:
+    +        llm = llm.bind_tools(mcp_tools)
+
+  state_py: |
+    @@ -12,6 +12,7 @@
+         sources_gathered: Annotated[list, operator.add] = field(default_factory=list)
+         research_loop_count: int = field(default=0)  # Research loop count
+         running_summary: str = field(default=None)  # Final report
+    +    classification_results: Annotated[list, operator.add] = field(default_factory=list)
+
+# Evidence Summary
+evidence_mapping:
+  config_surface: "Configuration.from_runnable_config() at src/ollama_deep_researcher/configuration.py:64-81"
+  tool_binding: "bind_tools() pattern at src/ollama_deep_researcher/graph.py:66"
+  llm_instantiation: "LLM creation in summarize_sources at src/ollama_deep_researcher/graph.py:303-314"
+  state_management: "SummaryState dataclass at src/ollama_deep_researcher/state.py:6-13"
+  insertion_point: "summarize_sources node at src/ollama_deep_researcher/graph.py:265-328"

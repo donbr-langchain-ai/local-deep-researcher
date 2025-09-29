@@ -1,0 +1,148 @@
+{
+  "workspace": {
+    "path": "src/ollama_deep_researcher/",
+    "analyzed_at": "2025-09-29T04:13:39Z"
+  },
+  "graph": {
+    "state_keys": [
+      "research_topic",
+      "search_query",
+      "web_research_results",
+      "sources_gathered",
+      "research_loop_count",
+      "running_summary"
+    ],
+    "nodes": [
+      {
+        "name": "generate_query",
+        "reads": ["research_topic", "research_loop_count"],
+        "writes": ["search_query"],
+        "file": "src/ollama_deep_researcher/graph.py"
+      },
+      {
+        "name": "web_research",
+        "reads": ["search_query", "research_loop_count"],
+        "writes": ["sources_gathered", "research_loop_count", "web_research_results"],
+        "file": "src/ollama_deep_researcher/graph.py"
+      },
+      {
+        "name": "summarize_sources",
+        "reads": ["research_topic", "running_summary", "web_research_results"],
+        "writes": ["running_summary"],
+        "file": "src/ollama_deep_researcher/graph.py"
+      },
+      {
+        "name": "reflect_on_summary",
+        "reads": ["research_topic", "running_summary"],
+        "writes": ["search_query"],
+        "file": "src/ollama_deep_researcher/graph.py"
+      },
+      {
+        "name": "finalize_summary",
+        "reads": ["running_summary", "sources_gathered"],
+        "writes": ["running_summary"],
+        "file": "src/ollama_deep_researcher/graph.py"
+      }
+    ],
+    "edges": [
+      {
+        "source": "START",
+        "target": "generate_query",
+        "condition": null
+      },
+      {
+        "source": "generate_query",
+        "target": "web_research",
+        "condition": null
+      },
+      {
+        "source": "web_research",
+        "target": "summarize_sources",
+        "condition": null
+      },
+      {
+        "source": "summarize_sources",
+        "target": "reflect_on_summary",
+        "condition": null
+      },
+      {
+        "source": "reflect_on_summary",
+        "target": "web_research",
+        "condition": "research_loop_count <= max_web_research_loops"
+      },
+      {
+        "source": "reflect_on_summary",
+        "target": "finalize_summary",
+        "condition": "research_loop_count > max_web_research_loops"
+      },
+      {
+        "source": "finalize_summary",
+        "target": "END",
+        "condition": null
+      }
+    ],
+    "loops": [
+      {
+        "name": "research_iteration_loop",
+        "exit_condition": "research_loop_count > max_web_research_loops"
+      }
+    ]
+  },
+  "tools": {
+    "builtin": [
+      {
+        "name": "Query",
+        "file": "src/ollama_deep_researcher/graph.py"
+      },
+      {
+        "name": "FollowUpQuery",
+        "file": "src/ollama_deep_researcher/graph.py"
+      }
+    ],
+    "search": [
+      {
+        "name": "tavily_search",
+        "file": "src/ollama_deep_researcher/utils.py"
+      },
+      {
+        "name": "perplexity_search",
+        "file": "src/ollama_deep_researcher/utils.py"
+      },
+      {
+        "name": "duckduckgo_search",
+        "file": "src/ollama_deep_researcher/utils.py"
+      },
+      {
+        "name": "searxng_search",
+        "file": "src/ollama_deep_researcher/utils.py"
+      }
+    ],
+    "mcp": []
+  },
+  "integration_points": [
+    {
+      "surface": "llm_provider_selection",
+      "file": "src/ollama_deep_researcher/graph.py",
+      "pattern": "get_llm() function with provider switching",
+      "best_practice": "config-driven LLM provider abstraction"
+    },
+    {
+      "surface": "search_api_routing",
+      "file": "src/ollama_deep_researcher/graph.py",
+      "pattern": "search_api conditional blocks in web_research()",
+      "best_practice": "registry-based search provider injection"
+    },
+    {
+      "surface": "structured_output_modes",
+      "file": "src/ollama_deep_researcher/graph.py",
+      "pattern": "generate_search_query_with_structured_output() with tool/json fallback",
+      "best_practice": "capability-aware output format selection"
+    },
+    {
+      "surface": "configuration_management",
+      "file": "src/ollama_deep_researcher/configuration.py",
+      "pattern": "Configuration.from_runnable_config() with env override",
+      "best_practice": "hierarchical config with runtime injection"
+    }
+  ]
+}
