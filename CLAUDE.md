@@ -102,7 +102,15 @@ ruff check src/ollama_deep_researcher/
 mypy src/ollama_deep_researcher/
 ```
 
+### Dependency Management
+
+- **Primary**: Use `uv` for fast dependency management and virtual environments (`uv sync`, `uv sync --group dev`)
+- **Alternative**: Standard `pip` for traditional Python workflows (`pip install -e ".[dev]"`)
+- **Recommended**: Always use `uv` for new development work
+
 ### Docker
+
+The project includes a Dockerfile for containerized deployment. Note that Ollama must run separately.
 
 ```bash
 # Build image
@@ -117,6 +125,8 @@ docker run --rm -it -p 2024:2024 \
   local-deep-researcher
 ```
 
+Access via: <https://smith.langchain.com/studio/?baseUrl=http://127.0.0.1:2024>
+
 ## Configuration
 
 ### Environment Variables
@@ -127,27 +137,44 @@ Configuration follows this priority order:
 2. LangGraph UI configuration
 3. Default values in Configuration class (lowest)
 
-Key variables in `.env`:
+Complete environment variables reference:
 
-- `LLM_PROVIDER`: "ollama" or "lmstudio"
-- `LOCAL_LLM`: Model name (e.g., "llama3.2", "qwen_qwq-32b")
-- `SEARCH_API`: "duckduckgo", "tavily", "perplexity", or "searxng"
+**Core Configuration:**
+
+- `LLM_PROVIDER`: "ollama" or "lmstudio" (default: "ollama")
+- `LOCAL_LLM`: Model name (default: "llama3.2")
+- `SEARCH_API`: "duckduckgo", "tavily", "perplexity", or "searxng" (default: "duckduckgo")
 - `MAX_WEB_RESEARCH_LOOPS`: Research iteration count (default: 3)
-- `USE_TOOL_CALLING`: Use tool calling vs JSON mode for structured output
+
+**LLM Provider URLs:**
+
+- `OLLAMA_BASE_URL`: Ollama service endpoint (default: <http://localhost:11434/>)
+- `LMSTUDIO_BASE_URL`: LMStudio OpenAI-compatible API URL (default: <http://localhost:1234/v1>)
+
+**Search API Keys:**
+
+- `TAVILY_API_KEY`: Required for Tavily search
+- `PERPLEXITY_API_KEY`: Required for Perplexity search
+- `SEARXNG_URL`: SearXNG instance URL (default: <http://localhost:8888>)
+
+**Advanced Options:**
+
+- `USE_TOOL_CALLING`: Use tool calling vs JSON mode for structured output (default: false, required for some models like DeepSeek R1)
 - `FETCH_FULL_PAGE`: Include full page content in search results (default: true)
+- `STRIP_THINKING_TOKENS`: Remove `<think>` tokens from model responses (default: true)
 
 ### LLM Configuration
 
-- Ollama: Configure `OLLAMA_BASE_URL` and `LOCAL_LLM`
-- LMStudio: Configure `LMSTUDIO_BASE_URL` and `LOCAL_LLM`
+- Ollama: Configure `OLLAMA_BASE_URL` (default: <http://localhost:11434/>) and `LOCAL_LLM` (default: llama3.2)
+- LMStudio: Configure `LMSTUDIO_BASE_URL` (default: <http://localhost:1234/v1>) and `LOCAL_LLM`
 - Some models (like DeepSeek R1 variants) may require tool calling instead of JSON mode
 
 ### Search APIs
 
-- DuckDuckGo: No API key required (default)
-- Tavily: Requires `TAVILY_API_KEY`
-- Perplexity: Requires `PERPLEXITY_API_KEY`
-- SearXNG: Requires `SEARXNG_URL`
+- **DuckDuckGo**: No API key required (default). Uses the duckduckgo-search library for web search.
+- **Tavily**: Requires `TAVILY_API_KEY` environment variable. The TavilyClient automatically reads this key from the environment.
+- **Perplexity**: Requires `PERPLEXITY_API_KEY` environment variable. Used in Authorization header as Bearer token.
+- **SearXNG**: Requires `SEARXNG_URL` environment variable pointing to your SearXNG instance (defaults to <http://localhost:8888>). Assumes you have a running SearXNG server.
 
 ## Code Patterns
 
@@ -176,19 +203,29 @@ All workflow state uses dataclasses in `state.py` with LangGraph annotations:
 
 ## Testing and Validation
 
-### Dependency Management
+### Testing
 
-- **Primary**: Use `uv` for fast dependency management and virtual environments (`uv sync`, `uv sync --group dev`)
-- **Alternative**: Standard `pip` for traditional Python workflows (`pip install -e ".[dev]"`)
-- **Recommended**: Always use `uv` for new development work
+This project currently has no formal test suite. Testing is primarily done through:
+
+- Manual testing via LangGraph Studio UI
+- Model compatibility validation with different LLM providers
+- Search provider integration testing
+- End-to-end workflow validation
 
 ### Model Compatibility
+
+Some models have specific requirements for structured output:
+
+- **DeepSeek R1 variants** (7B, 1.5B): Have difficulty with JSON mode, require `USE_TOOL_CALLING=true`
+- **gpt-oss models**: Do not support JSON mode in Ollama, require tool calling
+- Most newer models support both JSON mode and tool calling
 
 Test new models with both structured output modes:
 
 - Verify JSON parsing works correctly
 - Check tool calling functionality
 - Validate multi-turn conversation handling
+- Check fallback mechanisms for models with output difficulties
 
 ### Search Integration Testing
 
@@ -202,6 +239,12 @@ When adding search providers:
 
 LangGraph Studio works best with:
 
-- Firefox (recommended)
+- Firefox (recommended for best experience)
 - Chrome/Edge (good support)
 - Safari may have mixed content issues with HTTPS/HTTP
+
+If you encounter issues:
+
+1. Try using Firefox or another browser
+2. Disable ad-blocking extensions
+3. Check browser console for specific error messages
